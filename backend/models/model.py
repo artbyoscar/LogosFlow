@@ -1,50 +1,96 @@
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM, AutoConfig
+import math
+import gc
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1), :]
 
 class SimplePolicyNetwork(nn.Module):
-    def __init__(self, embedding_dim, hidden_size, num_layers=1, model_type="lstm"):
+    def __init__(self, embedding_dim, hidden_size, num_layers=1, model_type="lstm", seq_length=32):
         super().__init__()
+        # Set CPU threads for optimal performance
+        torch.set_num_threads(4)
+        
         self.embedding_dim = embedding_dim
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.model_type = model_type
+        self.seq_length = seq_length
 
-        self.input_projection = nn.Linear(embedding_dim, hidden_size)
+        # Memory-efficient initialization
+        self.input_projection = nn.Linear(embedding_dim, hidden_size, bias=False)  # Removed bias for efficiency
+        nn.init.xavier_uniform_(self.input_projection.weight)
+        self.dropout = nn.Dropout(0.2)  # Increased dropout for better regularization
 
         if model_type == "lstm":
-            self.core_model = nn.LSTM(hidden_size, hidden_size, num_layers, batch_first=True)
+            self.core_model = nn.LSTM(
+                hidden_size, 
+                hidden_size, 
+                num_layers, 
+                batch_first=True,
+                dropout=0.1 if num_layers > 1 else 0
+            )
         elif model_type == "gru":
-            self.core_model = nn.GRU(hidden_size, hidden_size, num_layers, batch_first=True)
+            self.core_model = nn.GRU(
+                hidden_size, 
+                hidden_size, 
+                num_layers, 
+                batch_first=True,
+                dropout=0.1 if num_layers > 1 else 0
+            )
         elif model_type == "transformer":
-            config = AutoConfig.from_pretrained("distilgpt2")
-            config.n_embd = hidden_size
-            config.n_layer = num_layers
-            config.n_head = 8
-            config.n_positions = 512
-            config.n_ctx = 512
-            self.core_model = AutoModelForCausalLM.from_config(config)
+            self.pos_encoder = PositionalEncoding(hidden_size, max_len=seq_length)
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=hidden_size,
+                nhead=8,  # Reduced number of heads for efficiency
+                dropout=0.2,
+                batch_first=True,
+                dim_feedforward=hidden_size * 2  # Reduced feedforward dimension
+            )
+            self.core_model = nn.TransformerEncoder(encoder_layer, num_layers)
         else:
             raise ValueError("Invalid model type")
 
-        self.output_projection = nn.Linear(hidden_size, embedding_dim)
+        self.output_projection = nn.Linear(hidden_size, embedding_dim, bias=False)  # Removed bias
+        nn.init.xavier_uniform_(self.output_projection.weight)
+        self.output_dropout = nn.Dropout(0.2)
+        self.layer_norm = nn.LayerNorm(embedding_dim)  # Added layer normalization
+        self.tanh = nn.Tanh()
+
+        self.device = torch.device("cpu")  # Force CPU usage since CUDA isn't available
+        self.to(self.device)
 
     def forward(self, embeddings):
+        # Clear memory cache
+        gc.collect()
+        
+        embeddings = embeddings.to(self.device)
         x = self.input_projection(embeddings)
+        x = self.dropout(x)
 
         if self.model_type in ["lstm", "gru"]:
             outputs, _ = self.core_model(x)
-            # Get the output of the last step of the sequence
             last_output = outputs[:, -1, :]
         elif self.model_type == "transformer":
-             # The causal LM model expects input_ids, not embeddings.
-             # We'll just use a dummy tensor of zeros here as a placeholder.
-            dummy_input_ids = torch.zeros_like(x, dtype=torch.long).to(x.device)
-            outputs = self.core_model(inputs_embeds=x, labels=dummy_input_ids).logits
-            # Use mean pooling for sentence-level prediction
-            last_output = outputs.mean(dim=1)  # Average across the sequence length
-        else:
-            raise ValueError("Invalid model type")
+            x = self.pos_encoder(x)
+            outputs = self.core_model(x)
+            last_output = outputs[:, -1, :]
 
-        predicted_embedding = self.output_projection(last_output)
+        x = self.output_dropout(last_output)
+        x = self.output_projection(x)
+        x = self.layer_norm(x)  # Normalize output
+        predicted_embedding = self.tanh(x)
+        
         return predicted_embedding
