@@ -3,3 +3,7 @@ numpy
 transformers
 datasets
 sentence_transformers
+nlpaug>=0.0.14  # Required for data augmentation
+nltk>=3.8.1    # Required for NLTK and nlpaug
+scikit-learn   # Required by nlpaug
+psutil

@@ -1,17 +1,17 @@
 import sys
 import os
 import nlpaug.augmenter.word as naw
-import nlpaug.augmenter.sentence as nas
+# Note: We've removed the import for 'nlpaug.augmenter.sentence' as it's not used
 
 # Add the parent directory of 'backend' to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import numpy as np
 from datasets import load_dataset
-from backend.models.encoder import Encoder  # Import from correct location
+from backend.models.encoder import Encoder
 import re
 
-def load_data(dataset_name, split="train[:50%]"):  # Increased to 50%
+def load_data(dataset_name, split="train[:50%]"):
     """Loads the dataset using the datasets library."""
     print(f"Loading dataset: {dataset_name} with split: {split}")
     dataset = load_dataset(dataset_name, split=split)
@@ -21,6 +21,10 @@ def load_data(dataset_name, split="train[:50%]"):  # Increased to 50%
 def segment_sentences(text, max_length=200):
     """Segments text into sentences with a maximum length."""
     print("Segmenting sentences...")
+    # Handle the case where text is a list (from previous augmentation)
+    if isinstance(text, list):
+        text = ' '.join(text)  # Join the list into a single string
+
     sentences = re.split(r"(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|!)\s", text)
     result = []
     for sentence in sentences:
@@ -37,33 +41,20 @@ def segment_sentences(text, max_length=200):
     return result
 
 def augment_text(text):
-    """Augments text using synonym replacement and back translation."""
+    """Augments text using synonym replacement."""
 
     # Synonym augmentation
     aug_syn = naw.SynonymAug(aug_src='wordnet')
     augmented_text_syn = aug_syn.augment(text)
 
-    # Back translation augmentation (you'll need to install models)
-    # See: https://nlpaug.readthedocs.io/en/latest/augmenter/sentence/back_translation.html
-    try:
-        aug_bt = nas.BackTranslationAug(
-            from_model_name='facebook/wmt19-en-de', 
-            to_model_name='facebook/wmt19-de-en'
-        )
-        augmented_text_bt = aug_bt.augment(text)
-    except Exception as e:
-        print(f"Back-translation failed: {e}")
-        print("Skipping back-translation for this text.")
-        augmented_text_bt = text
-
-    return [text, augmented_text_syn, augmented_text_bt]
+    return [text, augmented_text_syn]  # Only return original and synonym-augmented text
 
 def encode_and_save_embeddings(dataset, encoder, output_file):
     """Encodes sentences into embeddings and saves them to a file."""
     all_embeddings = []
     print("Encoding sentences and performing data augmentation...")
     for example in dataset:
-        text = example["text"]  # Access the 'text' field
+        text = example["text"]
 
         # Augment the text
         augmented_texts = augment_text(text)
@@ -78,7 +69,6 @@ def encode_and_save_embeddings(dataset, encoder, output_file):
     # Ensure the directory exists
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
-    # Debugging Prints:
     print(f"Saving embeddings to: {output_file}")
     print(f"Current working directory: {os.getcwd()}")
 
@@ -86,7 +76,7 @@ def encode_and_save_embeddings(dataset, encoder, output_file):
     print(f"Embeddings saved to {output_file}")
 
 def main():
-    dataset_name = "rotten_tomatoes"  # Changed to rotten_tomatoes
+    dataset_name = "rotten_tomatoes"
 
     # Define the absolute path to the output file
     output_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "embeddings.npy"))

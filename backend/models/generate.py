@@ -42,7 +42,7 @@ def generate_sequence(model, start_embeddings, length, corpus, corpus_embeddings
 
             # Compute similarities and apply temperature
             similarities = torch.matmul(next_embedding_normalized.unsqueeze(0), 
-                                        corpus_embeddings_normalized.t()).squeeze(0)
+                                         corpus_embeddings_normalized.t()).squeeze(0)
             scaled_similarities = similarities / temperature
             
             # Nucleus sampling
@@ -84,8 +84,19 @@ def beam_search(model, start_embeddings, corpus_embeddings, beam_width=5, length
             candidates = []
             for beam_embeddings, beam_indices, beam_score in beams:
                 next_embedding = model(beam_embeddings.unsqueeze(0))
+
+                print("Shape of next_embedding:", next_embedding.shape)  # Debug print
+
+                # next_embedding shape: [1, embedding_dim] (no sequence length dimension)
+                # Remove the slicing:
+                # next_embedding = next_embedding[:, -1, :]
+
+                # If needed, squeeze the extra dimension:
+                if next_embedding.shape[0] == 1:
+                    next_embedding = next_embedding.squeeze(0)  # Now [embedding_dim]
+
                 similarities = torch.matmul(
-                    torch.nn.functional.normalize(next_embedding.squeeze(0), dim=0),
+                    torch.nn.functional.normalize(next_embedding, dim=0),
                     torch.nn.functional.normalize(corpus_embeddings, dim=1).t()
                 )
 
@@ -98,7 +109,7 @@ def beam_search(model, start_embeddings, corpus_embeddings, beam_width=5, length
                 for prob, idx in zip(top_k_values.squeeze(), top_k_indices.squeeze()):
                     new_score = beam_score + torch.log(prob)
                     candidates.append((
-                        torch.cat([beam_embeddings, next_embedding.squeeze(0)], dim=0),
+                        torch.cat([beam_embeddings, next_embedding.unsqueeze(0)], dim=0),  # Add a dimension to next_embedding
                         beam_indices + [idx.item()],
                         new_score
                     ))
@@ -111,6 +122,11 @@ def beam_search(model, start_embeddings, corpus_embeddings, beam_width=5, length
     best_embeddings = best_beam[0]
 
     return best_indices, best_embeddings
+
+def load_corpus(file_path):
+    with open(file_path, 'r') as f:
+        corpus = [line.strip() for line in f]
+    return corpus
 
 def main():
     # Memory and CPU optimization
@@ -176,19 +192,6 @@ def main():
     start_embeddings = prompt_embeddings_tensor
     current_embeddings = start_embeddings.unsqueeze(0).to(device)
 
-    # Generate sequence with improved parameters
-    # generated_embeddings, closest_indices = generate_sequence(
-    #     model,
-    #     start_embeddings,
-    #     length=15,           # Increased generation length
-    #     corpus=corpus,
-    #     corpus_embeddings=corpus_embeddings_tensor,
-    #     device=device,
-    #     k=15,                # Increased for more variety
-    #     temperature=1.5,
-    #     top_p=0.9
-    # )
-
     # Or use beam search
     best_indices, best_embeddings = beam_search(
         model,
@@ -198,27 +201,17 @@ def main():
         length=15,
         repetition_penalty=1.2  # Adjust if needed
     )
-    # generated_corpus_sentences = [corpus[idx] for idx in best_indices]
 
-    # Decode generated sequences using best_embeddings from beam search
-    decoder = Decoder()
+    # Decode the best sequence from beam search
+    decoder = Decoder(embedding_dim, hidden_size, num_layers)
     generated_sentences = []
+
     for emb in best_embeddings:
         decoded_sentence, _ = decoder.decode_embedding(emb.unsqueeze(0), corpus, corpus_embeddings_tensor, k=15)
-        generated_sentences.append(decoded_sentence)
-        gc.collect()
+        generated_sentences.append(decoded_sentence[0])
 
-    # Get corpus sentences from indices
-    generated_corpus_sentences = [corpus[idx] for idx in best_indices]
-
-    # Print results
-    print("\nGenerated Text from Embeddings:")
-    for sentence in generated_sentences:
-        print(sentence)
-
-    print("\nGenerated Text from Closest Indices:")
-    for sentence in generated_corpus_sentences:
-        print(sentence)
+    generated_text = " ".join(generated_sentences)
+    print("Generated text (Beam Search):", generated_text)
 
 if __name__ == "__main__":
     main()
