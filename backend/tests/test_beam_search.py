@@ -1,9 +1,18 @@
 # backend/tests/test_beam_search.py
 
+import sys
+import os
 import unittest
 import torch
 import torch.nn as nn
-from backend.models.generate import beam_search  # Ensure this path is correct based on your project structure
+
+# Adjust sys.path to include the parent directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from backend.models.generate import beam_search  # Now, this should work correctly
 
 class MockModel(nn.Module):
     def __init__(self, embedding_dim=384):
