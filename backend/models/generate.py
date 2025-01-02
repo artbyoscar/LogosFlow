@@ -42,7 +42,7 @@ def generate_sequence(model, start_embeddings, length, corpus, corpus_embeddings
 
             # Compute similarities and apply temperature
             similarities = torch.matmul(next_embedding_normalized.unsqueeze(0), 
-                                         corpus_embeddings_normalized.t()).squeeze(0)
+                                        corpus_embeddings_normalized.t()).squeeze(0)
             scaled_similarities = similarities / temperature
             
             # Nucleus sampling
@@ -75,48 +75,81 @@ def generate_sequence(model, start_embeddings, length, corpus, corpus_embeddings
 
     return generated_embeddings, closest_indices
 
-def beam_search(model, start_embeddings, corpus_embeddings, beam_width=5, length=10, repetition_penalty=1.2):
+def beam_search(model, start_embeddings, corpus_embeddings, device, beam_width=5, length=10, repetition_penalty=1.2):
     model.eval()
+
+    # Ensure start_embeddings is 3D: (batch_size, seq_len, embedding_dim)
+    if start_embeddings.dim() == 2:
+        start_embeddings = start_embeddings.unsqueeze(1)  # Add sequence dimension if missing
+
+    start_embeddings = start_embeddings.to(device)
+    corpus_embeddings = corpus_embeddings.to(device)
     beams = [(start_embeddings, [], 0.0)]  # (embeddings, indices, score)
 
     with torch.no_grad():
         for _ in range(length):
             candidates = []
             for beam_embeddings, beam_indices, beam_score in beams:
-                next_embedding = model(beam_embeddings.unsqueeze(0))
+                # Ensure beam_embeddings is 3D
+                if beam_embeddings.dim() == 2:
+                    beam_embeddings = beam_embeddings.unsqueeze(1)
 
-                print("Shape of next_embedding:", next_embedding.shape)  # Debug print
+                next_embedding = model(beam_embeddings)
 
-                # next_embedding shape: [1, embedding_dim] (no sequence length dimension)
-                # Remove the slicing:
-                # next_embedding = next_embedding[:, -1, :]
+                # Check if next_embedding has a sequence dimension
+                if next_embedding.dim() == 3:
+                    next_embedding_normalized = normalize(next_embedding[:, -1, :], dim=1)
+                else:  # next_embedding is 2D
+                    next_embedding_normalized = normalize(next_embedding, dim=1)  # Normalize along the embedding dimension
 
-                # If needed, squeeze the extra dimension:
-                if next_embedding.shape[0] == 1:
-                    next_embedding = next_embedding.squeeze(0)  # Now [embedding_dim]
+                corpus_embeddings_normalized = normalize(corpus_embeddings, dim=1)
 
-                similarities = torch.matmul(
-                    torch.nn.functional.normalize(next_embedding, dim=0),
-                    torch.nn.functional.normalize(corpus_embeddings, dim=1).t()
-                )
+                similarities = torch.matmul(next_embedding_normalized, corpus_embeddings_normalized.t())
 
-                # Apply repetition penalty to similarities
-                for idx in beam_indices[-5:]:  # Penalize the last 5 tokens
-                    similarities[:, idx] /= repetition_penalty
+                if similarities.dim() > 1:
+                    similarities = similarities.squeeze(0)
 
-                top_k_values, top_k_indices = similarities.topk(beam_width)
+                # Apply repetition penalty
+                for idx in beam_indices[-5:]:
+                    similarities[idx] /= repetition_penalty
 
-                for prob, idx in zip(top_k_values.squeeze(), top_k_indices.squeeze()):
+                similarities += 1e-8  # Add a small value to avoid log(0)
+                similarities = similarities.clamp(min=1e-6)  # Prevent very small values
+
+                # Get top-k, but handle cases where there are fewer than beam_width elements
+                num_candidates = min(beam_width, similarities.size(0))
+                top_k_values, top_k_indices = similarities.topk(num_candidates)
+
+                # Only consider unique indices
+                unique_indices = torch.unique(top_k_indices)
+                
+                # Create new candidates for each of the unique top_k results
+                for idx in unique_indices:
+                    idx_val = idx.item()
+                    
+                    # Find the corresponding probability for the unique index
+                    prob_index = (top_k_indices == idx).nonzero(as_tuple=True)[0]
+                    prob = top_k_values[prob_index].max()  # Use max to handle potential duplicates in top_k_values
+
                     new_score = beam_score + torch.log(prob)
+
+                    # Handle 2D or 3D tensor appropriately
+                    if next_embedding.dim() == 3:
+                        new_embedding_to_cat = next_embedding[:, -1:, :].clone().detach()
+                    else:
+                        new_embedding_to_cat = next_embedding.unsqueeze(1).clone().detach()
+
+                    new_embeddings = torch.cat([beam_embeddings, new_embedding_to_cat], dim=1)
                     candidates.append((
-                        torch.cat([beam_embeddings, next_embedding.unsqueeze(0)], dim=0),  # Add a dimension to next_embedding
-                        beam_indices + [idx.item()],
+                        new_embeddings,
+                        beam_indices + [idx_val],
                         new_score
                     ))
 
-            beams = sorted(candidates, key=lambda x: x[2], reverse=True)[:beam_width]
+            # Select top-k beams
+            candidates = sorted(candidates, key=lambda x: x[2], reverse=True)
+            beams = candidates[:beam_width]
 
-    # Get the best beam (highest score)
     best_beam = beams[0]
     best_indices = best_beam[1]
     best_embeddings = best_beam[0]
@@ -140,32 +173,29 @@ def main():
     num_layers = 2
     model_type = "transformer"
 
-    # Define paths
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    model_dir = os.path.join(root_dir, "backend", "models", "models")
-    data_dir = os.path.join(root_dir, "data")
-    model_path = os.path.join(model_dir, "model.pt")
+    # Define paths (updated to be relative to the script's location)
+    script_dir = Path(__file__).parent  # Gets the directory of the current script
+    root_dir = script_dir.parent.parent  # Moves up two levels to the 'LogosFlow' directory
+    model_dir = root_dir / "backend" / "models" / "models"  # Path to the model directory
+    data_dir = root_dir / "data" # Path to the data directory
+    model_path = model_dir / "model.pt" # Path to the model file
 
     # Ensure directories exist
-    os.makedirs(model_dir, exist_ok=True)
-    os.makedirs(data_dir, exist_ok=True)
+    model_dir.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
 
     # Load corpus using CorpusManager
-    corpus_manager = CorpusManager(os.path.join(data_dir, "corpus_data.json"))
+    corpus_manager = CorpusManager(data_dir / "corpus_data.json")
     prompt = ["This is the first sentence.", "Here is another sentence."]
     corpus = prompt + corpus_manager.get_sentences()
 
     # Load and configure model
-    try:
-        model = SimplePolicyNetwork(embedding_dim, hidden_size, num_layers, model_type)
-        if os.path.exists(model_path):
-            model.load_state_dict(torch.load(model_path, map_location='cpu', weights_only=True))
-            print(f"Model loaded from {model_path}")
-        else:
-            print(f"Warning: Model file not found at {model_path}. Starting with an untrained model.")
-    except RuntimeError as e:
-        print(f"Error loading model: {e}")
-        return
+    model = SimplePolicyNetwork(embedding_dim, hidden_size, num_layers, model_type)
+    if model_path.exists():
+        model.load_state_dict(torch.load(model_path, map_location='cpu'))
+        print(f"Model loaded from {model_path}")
+    else:
+        print(f"Warning: Model file not found at {model_path}. Starting with an untrained model.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -189,14 +219,12 @@ def main():
     prompt_embeddings_tensor = torch.from_numpy(prompt_embeddings).float().to(device)
     corpus_embeddings_tensor = torch.from_numpy(corpus_embeddings).float().to(device)
 
-    start_embeddings = prompt_embeddings_tensor
-    current_embeddings = start_embeddings.unsqueeze(0).to(device)
-
-    # Or use beam search
+    # Generate text using beam search
     best_indices, best_embeddings = beam_search(
         model,
-        start_embeddings,
+        prompt_embeddings_tensor,
         corpus_embeddings_tensor,
+        device,
         beam_width=5,
         length=15,
         repetition_penalty=1.2  # Adjust if needed
@@ -207,8 +235,8 @@ def main():
     generated_sentences = []
 
     for emb in best_embeddings:
-        decoded_sentence, _ = decoder.decode_embedding(emb.unsqueeze(0), corpus, corpus_embeddings_tensor, k=15)
-        generated_sentences.append(decoded_sentence[0])
+        decoded_sentence, _, _ = decoder.decode_embedding(emb.unsqueeze(0), corpus, corpus_embeddings_tensor, k=15)
+        generated_sentences.append(decoded_sentence)
 
     generated_text = " ".join(generated_sentences)
     print("Generated text (Beam Search):", generated_text)

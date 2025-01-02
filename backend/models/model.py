@@ -20,33 +20,31 @@ class PositionalEncoding(nn.Module):
 class SimplePolicyNetwork(nn.Module):
     def __init__(self, embedding_dim, hidden_size, num_layers=1, model_type="lstm", seq_length=32):
         super().__init__()
-        # Set CPU threads for optimal performance
         torch.set_num_threads(4)
-        
+
         self.embedding_dim = embedding_dim
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.model_type = model_type
         self.seq_length = seq_length
 
-        # Memory-efficient initialization
-        self.input_projection = nn.Linear(embedding_dim, hidden_size, bias=False)  # Removed bias for efficiency
+        self.input_projection = nn.Linear(embedding_dim, hidden_size, bias=False)
         nn.init.xavier_uniform_(self.input_projection.weight)
-        self.dropout = nn.Dropout(0.2)  # Increased dropout for better regularization
+        self.dropout = nn.Dropout(0.2)
 
         if model_type == "lstm":
             self.core_model = nn.LSTM(
-                hidden_size, 
-                hidden_size, 
-                num_layers, 
+                hidden_size,
+                hidden_size,
+                num_layers,
                 batch_first=True,
                 dropout=0.1 if num_layers > 1 else 0
             )
         elif model_type == "gru":
             self.core_model = nn.GRU(
-                hidden_size, 
-                hidden_size, 
-                num_layers, 
+                hidden_size,
+                hidden_size,
+                num_layers,
                 batch_first=True,
                 dropout=0.1 if num_layers > 1 else 0
             )
@@ -54,29 +52,31 @@ class SimplePolicyNetwork(nn.Module):
             self.pos_encoder = PositionalEncoding(hidden_size, max_len=seq_length)
             encoder_layer = nn.TransformerEncoderLayer(
                 d_model=hidden_size,
-                nhead=8,  # Reduced number of heads for efficiency
+                nhead=8,
                 dropout=0.2,
                 batch_first=True,
-                dim_feedforward=hidden_size * 2  # Reduced feedforward dimension
+                dim_feedforward=hidden_size * 2
             )
             self.core_model = nn.TransformerEncoder(encoder_layer, num_layers)
         else:
             raise ValueError("Invalid model type")
 
-        self.output_projection = nn.Linear(hidden_size, embedding_dim, bias=False)  # Removed bias
+        self.output_projection = nn.Linear(hidden_size, embedding_dim, bias=False)
         nn.init.xavier_uniform_(self.output_projection.weight)
         self.output_dropout = nn.Dropout(0.2)
-        self.layer_norm = nn.LayerNorm(embedding_dim)  # Added layer normalization
+        self.layer_norm = nn.LayerNorm(embedding_dim)
         self.tanh = nn.Tanh()
 
-        self.device = torch.device("cpu")  # Force CPU usage since CUDA isn't available
+        self.device = torch.device("cpu")
         self.to(self.device)
 
     def forward(self, embeddings):
-        # Clear memory cache
         gc.collect()
-        
         embeddings = embeddings.to(self.device)
+        # Ensure embeddings is 3D: (batch_size, seq_len, embedding_dim)
+        if embeddings.dim() == 2:
+            embeddings = embeddings.unsqueeze(1)  # Add sequence dimension if missing
+
         x = self.input_projection(embeddings)
         x = self.dropout(x)
 
@@ -90,7 +90,7 @@ class SimplePolicyNetwork(nn.Module):
 
         x = self.output_dropout(last_output)
         x = self.output_projection(x)
-        x = self.layer_norm(x)  # Normalize output
+        x = self.layer_norm(x)
         predicted_embedding = self.tanh(x)
-        
+
         return predicted_embedding

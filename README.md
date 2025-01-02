@@ -14,52 +14,53 @@ Logos Flow is a research project exploring **Concept-Driven Reinforcement Learni
 *   **Multilingual & Multimodal:** Leverages a shared semantic space, currently based on a modified version of [SONAR](https://github.com/facebookresearch/SONAR) sentence embeddings fine-tuned on the `rotten_tomatoes` dataset, to better capture the nuances of sentiment and improve the performance of our models in this specific domain.
 *   **Improved Coherence:** Facilitates the generation of longer, more coherent text through concept-level planning.
 *   **Resource Efficiency:** Designed for experimentation and development on machines with limited computational resources (e.g., a personal laptop).
-*   **Data Augmentation:** Employs techniques like synonym replacement and back-translation (using `nlpaug`) to enhance the training dataset.
+*   **Data Augmentation:** Employs techniques like synonym replacement (using `nlpaug`) to enhance the training dataset.
 
 **Note:** This project is under active development. Expect changes and improvements as we continue our research.
 
 ## Project Structure
 
 LogosFlow/
-├── backend/               # Backend code (API, model serving)
-│   ├── .venv/             # Virtual environment for backend dependencies
-│   ├── app.py             # Main backend application file (e.g., Flask/FastAPI)
-│   ├── api/               # API endpoints
+├── backend/                  # Backend code (API, model serving)
+│   ├── .venv/              # Virtual environment for backend dependencies
+│   ├── app.py              # Main backend application file (e.g., Flask/FastAPI)
+│   ├── api/                # API endpoints
 │   │   ├── init.py
 │   │   └── routes.py
-│   ├── models/            # Your core LCM model
+│   ├── models/             # Your core LCM model
 │   │   ├── init.py
-│   │   ├── model.py       # Core LCM model definition (now with Decoder)
-│   │   ├── encoder.py     # Sentence encoder module
-│   │   ├── decoder.py     # Sentence decoder module
-│   │   ├── train.py       # Training script
-│   │   └── generate.py    # Text generation script (updated with Decoder)
+│   │   ├── model.py        # Core LCM model definition (with Decoder)
+│   │   ├── encoder.py      # Sentence encoder module
+│   │   ├── decoder.py      # Sentence decoder module
+│   │   ├── train.py        # Training script
+│   │   └── generate.py     # Text generation script (with beam search fix)
 │   ├── utils/
 │   │   ├── init.py
-│   │   ├── preprocess.py  # Data preprocessing and augmentation script
+│   │   ├── preprocess.py   # Data preprocessing and augmentation script
 │   │   └── corpus_manager.py # Manages the corpus data
 │   ├── tests/
 │   │   ├── init.py
 │   │   ├── test_encoder_decoder.py # Tests for encoding/decoding
-│   │   └── test_load.py   # Tests for data loading
-│   ├── requirements.txt   # Backend dependencies
+│   │   ├── test_load.py   # Tests for data loading
+│   │   └── test_nltk.py   # Script to test NLTK data and setup
+│   ├── requirements.txt    # Backend dependencies
 │   └── ...
-├── frontend/              # Frontend code (HTML, CSS, JavaScript)
+├── frontend/               # Frontend code (HTML, CSS, JavaScript)
 │   ├── public/
 │   │   ├── index.html
 │   │   └── ...
-│   ├── src/               # React, Vue, or other frontend framework
+│   ├── src/                # React, Vue, or other frontend framework
 │   │   ├── components/
 │   │   ├── App.js
 │   │   └── ...
-│   ├── package.json       # Frontend dependencies
+│   ├── package.json        # Frontend dependencies
 │   └── ...
-├── data/                  # Data directory
-│   ├── corpus_data.json   # the json file containing the base corpus for the model
-│   └── embeddings.npy     # Processed embeddings
-├── .gitignore             # Files and folders to be ignored by Git
-├── README.md              # Project description (this file)
-└── download_nltk.py       # Script to download required NLTK resources
+├── data/                   # Data directory
+│   ├── corpus_data.json    # JSON file containing the base corpus for the model
+│   └── embeddings.npy      # Processed embeddings
+├── .gitignore              # Files and folders to be ignored by Git
+├── README.md               # Project description (this file)
+└── download_nltk.py        # Script to download required NLTK resources
 
 
 ## Getting Started
@@ -75,16 +76,16 @@ LogosFlow/
 1.  **Clone the Repository:**
 
     ```bash
-    git clone [https://github.com/artbyoscar/LogosFlow.git](https://github.com/artbyoscar/LogosFlow.git) # Replace with your repository URL
+    git clone [https://github.com/artbyoscar/LogosFlow.git](https://github.com/artbyoscar/LogosFlow.git)
     cd LogosFlow
     ```
 
 2.  **Create and Activate a Virtual Environment:**
 
     ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate  # On Linux/macOS
-    .venv\Scripts\activate  # On Windows
+    python3 -m venv .venv_new  # Recommended to use .venv_new
+    source .venv_new/bin/activate  # On Linux/macOS
+    .venv_new\Scripts\activate  # On Windows
     ```
 
 3.  **Install Dependencies:**
@@ -96,18 +97,22 @@ LogosFlow/
 **NLTK Data Setup:**
 
 *   Run the provided script to download the necessary NLTK data:
+
     ```bash
     python download_nltk.py
     ```
-    *   If you encounter issues, you can download them manually within a Python interpreter:
-        ```python
-        import nltk
-        nltk.download('averaged_perceptron_tagger')
-        nltk.download('wordnet')
-        nltk.download('omw-1.4')
-        nltk.download('punkt')
-        ```
-*   **Important:** In some cases, you might need to set the `NLTK_DATA` environment variable. See the **Troubleshooting** section for details.
+
+*   If you encounter issues, you can download them manually within a Python interpreter:
+
+    ```python
+    import nltk
+    nltk.download('averaged_perceptron_tagger')
+    nltk.download('wordnet')
+    nltk.download('omw-1.4')
+    nltk.download('punkt')
+    ```
+
+*   **Important:** You might need to set the `NLTK_DATA` environment variable. See the **Troubleshooting** section for details.
 
 **Data Preparation:**
 
@@ -117,7 +122,7 @@ LogosFlow/
 
 2.  **Preprocess the Data:**
 
-    *   Run the `preprocess.py` script to segment the dataset into sentences, perform data augmentation, encode them into embeddings, and save them to the `data/` directory:
+    *   Run the `preprocess.py` script to segment the dataset into sentences, perform data augmentation (synonym replacement), encode them into embeddings, and save them to the `data/` directory:
 
         ```bash
         python backend/utils/preprocess.py
@@ -144,7 +149,8 @@ LogosFlow/
     ```
 
     *   This script loads a trained model and generates text based on a given prompt.
-    *   Modify the `start_text` and other generation parameters (e.g., `length`) in `generate.py`.
+    *   Modify the `start_text` and other generation parameters (e.g., `beam_width`, `length`, `repetition_penalty`) in `generate.py`.
+    * **`generate.py` now includes the latest fixes for `IndexError` and `RuntimeError` in the `beam_search` function.**
 
 **Testing:**
 
@@ -154,16 +160,22 @@ LogosFlow/
     python -m unittest discover backend/tests
     ```
 
+2.  **Test NLTK Setup:**
+    ```bash
+    python backend/tests/test_nltk.py
+    ```
+
 ## Current Status
 
 *   Successfully set up the development environment and project structure.
 *   Using the `rotten_tomatoes` dataset for initial training and evaluation.
 *   Implemented encoding and decoding using a modified Sentence-BERT model (384-dimensional embeddings).
-*   Data preprocessing pipeline (`preprocess.py`) segments text, performs data augmentation (synonym replacement and back-translation), encodes sentences, and saves embeddings.
-*   Implemented a `SimplePolicyNetwork` (`model.py`) based on a Transformer architecture, now including a `Decoder` for improved text generation.
+*   Data preprocessing pipeline (`preprocess.py`) segments text, performs data augmentation (synonym replacement), encodes sentences, and saves embeddings.
+*   Implemented a `SimplePolicyNetwork` (`model.py`) based on a Transformer architecture, including a `Decoder` for improved text generation.
 *   Training script (`train.py`) with early stopping, learning rate scheduling, and CPU/memory monitoring.
-*   **Achieved a validation loss of 0.0029 on the `rotten_tomatoes` dataset (current settings).**
-*   **Next:** We will focus on profiling, hyperparameter tuning, exploring model architectures, and implementing beam search with repetition penalty.
+*   **`generate.py` now includes a fix for the `IndexError` and `RuntimeError` in `beam_search` and other improvements.**
+*   Achieved a validation loss of 0.0029 on the `rotten_tomatoes` dataset (current settings).
+*   **Next:** We will focus on profiling, hyperparameter tuning, exploring model architectures.
 
 ## Experimentation and Development
 
@@ -179,8 +191,7 @@ Here are some suggestions for experiments and further development:
     *   Fine-tune `num_epochs` and early stopping `patience`.
 
 *   **Generation Parameters (`generate.py`):**
-    *   Implement **beam search** with **repetition penalty**.
-    *   Experiment with different `beam_width` and `repetition_penalty` values.
+    *   Experiment with different `beam_width`, `length`, and `repetition_penalty` values in the `beam_search` function.
 
 *   **Data Augmentation (`preprocess.py`):**
     *   Experiment with different augmentation techniques and parameters in `nlpaug`.
@@ -199,11 +210,12 @@ Here are some suggestions for experiments and further development:
 
 **NLTK `LookupError`:**
 
-*   If you encounter a `LookupError` related to the `averaged_perceptron_tagger` or other NLTK resources:
-    1.  **Verify NLTK Data:** Ensure the necessary data packages are downloaded in the correct directory (usually `C:\Users\<YourUsername>\nltk_data` on Windows). Check the contents of the `taggers` folder within the `nltk_data` directory.
+*   If you encounter a `LookupError` related to `averaged_perceptron_tagger`, `punkt`, or `wordnet`:
+    1.  **Verify NLTK Data:** Ensure the necessary data packages are downloaded in the correct directory (usually `C:\Users\<YourUsername>\nltk_data` on Windows). Check the contents of the `taggers` and `tokenizers` folders within the `nltk_data` directory.
     2.  **Environment Variable:** Set the `NLTK_DATA` environment variable to point to your NLTK data directory:
         *   **Windows:** Search for "environment variables" in the Start menu, click "Edit the system environment variables," then "Environment Variables...". Add a new variable named `NLTK_DATA` with the value `C:\Users\<YourUsername>\nltk_data` (or your custom path).
     3.  **Redownload:** If needed, redownload the NLTK data packages within a Python interpreter, specifying the download directory:
+
         ```python
         import nltk
         nltk.download('averaged_perceptron_tagger', download_dir='C:\\Users\\<YourUsername>/nltk_data')
@@ -211,7 +223,9 @@ Here are some suggestions for experiments and further development:
         nltk.download('omw-1.4', download_dir='C:\\Users\\<YourUsername>/nltk_data')
         nltk.download('punkt', download_dir='C:\\Users\\<YourUsername>/nltk_data')
         ```
-    4.  **Restart:** After making changes, restart your terminal or computer.
+
+    4.  **Use `test_nltk.py`:** Run the provided `test_nltk.py` script to isolate and debug NLTK issues.
+    5.  **Restart:** After making changes, restart your terminal or computer.
 
 ## Contributing
 
@@ -232,7 +246,7 @@ Please adhere to the following guidelines:
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. (You'll need to add a `LICENSE` file).
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. (You'll need to add a `LICENSE` file with the MIT License text).
 
 ## Acknowledgements
 
