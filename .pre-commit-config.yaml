@@ -1,0 +1,18 @@
+# .pre-commit-config.yaml
+
+repos:
+  - repo: https://github.com/psf/black
+    rev: 23.1.0  # Use the desired stable version
+    hooks:
+      - id: black
+
+  - repo: https://github.com/PyCQA/flake8
+    rev: 4.0.1
+    hooks:
+      - id: flake8
+
+  - repo: https://github.com/pre-commit/mirrors-pylint
+    rev: v2.7.4  # Updated to a valid and stable tag
+    hooks:
+      - id: pylint
+        args: [--disable=C0114,C0115,C0116]  # Customize as needed

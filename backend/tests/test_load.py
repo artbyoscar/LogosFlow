@@ -9,7 +9,9 @@ from datasets import load_dataset
 
 if __name__ == "__main__":
     try:
-        dataset = load_dataset("roc_stories", split="train[:1%]")  # Try roc_stories again
+        dataset = load_dataset(
+            "roc_stories", split="train[:1%]"
+        )  # Try roc_stories again
         print("Dataset loaded successfully!")
         print(dataset)
     except Exception as e:

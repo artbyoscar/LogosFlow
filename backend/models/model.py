@@ -3,22 +3,28 @@ import torch.nn as nn
 import math
 import gc
 
+
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
         super(PositionalEncoding, self).__init__()
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
+        )
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x):
-        return x + self.pe[:, :x.size(1), :]
+        return x + self.pe[:, : x.size(1), :]
+
 
 class SimplePolicyNetwork(nn.Module):
-    def __init__(self, embedding_dim, hidden_size, num_layers=1, model_type="lstm", seq_length=32):
+    def __init__(
+        self, embedding_dim, hidden_size, num_layers=1, model_type="lstm", seq_length=32
+    ):
         super().__init__()
         torch.set_num_threads(4)
 
@@ -38,7 +44,7 @@ class SimplePolicyNetwork(nn.Module):
                 hidden_size,
                 num_layers,
                 batch_first=True,
-                dropout=0.1 if num_layers > 1 else 0
+                dropout=0.1 if num_layers > 1 else 0,
             )
         elif model_type == "gru":
             self.core_model = nn.GRU(
@@ -46,7 +52,7 @@ class SimplePolicyNetwork(nn.Module):
                 hidden_size,
                 num_layers,
                 batch_first=True,
-                dropout=0.1 if num_layers > 1 else 0
+                dropout=0.1 if num_layers > 1 else 0,
             )
         elif model_type == "transformer":
             self.pos_encoder = PositionalEncoding(hidden_size, max_len=seq_length)
@@ -55,7 +61,7 @@ class SimplePolicyNetwork(nn.Module):
                 nhead=8,
                 dropout=0.2,
                 batch_first=True,
-                dim_feedforward=hidden_size * 2
+                dim_feedforward=hidden_size * 2,
             )
             self.core_model = nn.TransformerEncoder(encoder_layer, num_layers)
         else:
